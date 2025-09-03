@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 import { ensureUserAndPatient } from "@/lib/supaHelpers"
+import { createAuthError, createRoutingError, logAuthError, logRoutingError, getAuthErrorMessage, getRoutingErrorMessage, getStoredErrors, clearStoredErrors } from "@/lib/errorHandling"
 import GovDataMock from "@/components/widgets/GovDataMock"
 import CustomThresholds from "@/components/widgets/CustomThresholds"
 import AnomalyDetector from "@/components/widgets/AnomalyDetector"
@@ -12,6 +13,7 @@ import MedicationReminders from "@/components/widgets/MedicationReminders"
 import LanguageSelector from "@/components/LanguageSelector"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { LogOut } from "lucide-react"
 
 // Lightweight AI summary widget (mock) – aggregates a short sentence from recent stats
 function AIReportWidget() {
@@ -48,40 +50,141 @@ export default function DashboardIndex() {
   const [fullName, setFullName] = useState<string>("")
   const [email, setEmail] = useState<string>("")
   const [elderMode, setElderMode] = useState<boolean>(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string>("")
+  const [showDebugInfo, setShowDebugInfo] = useState(false)
   const envOk = useMemo(() => {
     return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
   }, [])
 
-  // Auth + profile name
+  // Auth + profile name with comprehensive session management
   useEffect(() => {
     const init = async () => {
-      if (!envOk) return
-      const { data } = await supabase.auth.getSession()
-      if (!data.session) {
+      try {
+        setIsLoading(true)
+        setError("")
+        
+        if (!envOk) {
+          setError("Environment configuration missing")
+          setIsLoading(false)
+          return
+        }
+
+        console.log("Checking session...")
+        const { data, error: sessionError } = await supabase.auth.getSession()
+        
+        if (sessionError) {
+          console.error("Session error:", sessionError)
+          const error = createAuthError('session', sessionError.message, { sessionError })
+          logAuthError(error)
+          setError(getAuthErrorMessage(error))
+          router.push("/login")
+          return
+        }
+
+        if (!data.session) {
+          console.log("No session found, redirecting to login")
+          const error = createRoutingError('session_check', 'No session found', '/dashboard', '/login')
+          logRoutingError(error)
+          router.push("/login")
+          return
+        }
+
+        console.log("Session found, user:", data.session.user.id)
+        setSession(data.session)
+        setEmail(data.session.user?.email ?? "")
+
+        // Ensure basic patient linkage (hackathon-friendly helper)
+        try { 
+          await ensureUserAndPatient()
+          console.log("User and patient records ensured")
+        } catch (error) {
+          console.error("Error ensuring user/patient records:", error)
+          // Continue anyway, this is not critical
+        }
+
+        // Load profile full_name if any
+        try {
+          const { data: prof, error: profileError } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("user_id", data.session.user.id)
+            .maybeSingle()
+          
+          if (profileError) {
+            console.error("Profile error:", profileError)
+          } else {
+            setFullName(prof?.full_name ?? "")
+          }
+        } catch (error) {
+          console.error("Error loading profile:", error)
+        }
+
+        // Auto-seed mock data in development to ensure widgets are populated
+        if (process.env.NODE_ENV === "development") {
+          try {
+            await seedIfEmpty(data.session.user.id)
+          } catch (error) {
+            console.error("Error seeding data:", error)
+          }
+        }
+
+        console.log("Dashboard initialization complete")
+      } catch (error) {
+        console.error("Dashboard initialization error:", error)
+        const authError = createAuthError('session', 'Dashboard initialization failed', { error: error instanceof Error ? error.message : String(error) })
+        logAuthError(authError)
+        setError(getAuthErrorMessage(authError))
         router.push("/login")
-        return
-      }
-      setSession(data.session)
-      setEmail(data.session.user?.email ?? "")
-
-      // Ensure basic patient linkage (hackathon-friendly helper)
-      try { await ensureUserAndPatient() } catch {}
-
-      // Load profile full_name if any
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("user_id", data.session.user.id)
-        .maybeSingle()
-      setFullName(prof?.full_name ?? "")
-
-      // Auto-seed mock data in development to ensure widgets are populated
-      if (process.env.NODE_ENV === "development") {
-        await seedIfEmpty(data.session.user.id)
+      } finally {
+        setIsLoading(false)
       }
     }
+
     init()
+
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state changed:", event, session?.user?.id)
+      
+      if (event === 'SIGNED_OUT' || !session) {
+        console.log("User signed out, redirecting to login")
+        const error = createRoutingError('redirect', 'User signed out', '/dashboard', '/login')
+        logRoutingError(error)
+        router.push("/login")
+      } else if (event === 'SIGNED_IN' && session) {
+        console.log("User signed in, updating session")
+        setSession(session)
+        setEmail(session.user?.email ?? "")
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [router, envOk])
+
+  // Logout function
+  const handleLogout = async () => {
+    try {
+      console.log("Logging out...")
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error("Logout error:", error)
+        const authError = createAuthError('logout', error.message, { error })
+        logAuthError(authError)
+        setError(getAuthErrorMessage(authError))
+      } else {
+        console.log("Logout successful")
+        router.push("/login")
+      }
+    } catch (error) {
+      console.error("Unexpected logout error:", error)
+      const authError = createAuthError('logout', 'Unexpected logout error', { error: error instanceof Error ? error.message : String(error) })
+      logAuthError(authError)
+      setError(getAuthErrorMessage(authError))
+    }
+  }
 
   // Seed helper (inline, avoids external scripts import in app router)
   async function seedIfEmpty(userId: string) {
@@ -116,6 +219,21 @@ export default function DashboardIndex() {
     await supabase.from("appliance_logs").insert(rows)
   }
 
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-6 text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading dashboard...</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Environment error
   if (!envOk) {
     return (
       <div className="min-h-screen p-6">
@@ -133,18 +251,47 @@ export default function DashboardIndex() {
     )
   }
 
+  // Session error or no session
   if (!session) {
-    return <div className="min-h-screen p-6">Loading dashboard…</div>
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <Card className="w-full max-w-md">
+          <CardContent className="p-6 text-center">
+            <p className="text-muted-foreground mb-4">No active session found</p>
+            <Button onClick={() => router.push("/login")} className="w-full">
+              Go to Login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 space-y-6">
+      {/* Error banner */}
+      {error && (
+        <Card className="border-red-300 bg-red-50">
+          <CardContent className="p-4">
+            <p className="text-red-700 text-sm">{error}</p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setError("")}
+              className="mt-2"
+            >
+              Dismiss
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Top/account section – for judges: shows auth + quick actions */}
       <Card className="rounded-2xl shadow border">
         <CardHeader>
           <CardTitle>Welcome{fullName ? `, ${fullName}` : ""}</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
           <div>
             <div className="text-sm text-gray-500">Signed in as</div>
             <div className="font-medium">{email}</div>
@@ -158,7 +305,7 @@ export default function DashboardIndex() {
             </Button>
             <LanguageSelector />
           </div>
-          <div className="flex items-center justify-start md:justify-end gap-2">
+          <div className="flex items-center justify-start md:justify-center gap-2">
             <span className="text-sm text-gray-600">Elder mode</span>
             <Button
               variant={elderMode ? "default" : "outline"}
@@ -166,6 +313,24 @@ export default function DashboardIndex() {
               className={elderMode ? "text-lg py-6 px-6" : ""}
             >
               {elderMode ? "On" : "Off"}
+            </Button>
+          </div>
+          <div className="flex items-center justify-start md:justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDebugInfo(!showDebugInfo)}
+              className="text-xs"
+            >
+              {showDebugInfo ? "Hide" : "Show"} Debug
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleLogout}
+              className="flex items-center gap-2"
+            >
+              <LogOut className="h-4 w-4" />
+              Logout
             </Button>
           </div>
         </CardContent>
@@ -199,6 +364,65 @@ export default function DashboardIndex() {
         <AIReportWidget />
       </div>
 
+      {/* Debug info for testing */}
+      {showDebugInfo && (
+        <Card className="rounded-2xl shadow border border-yellow-300 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              Debug Information
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={clearStoredErrors}
+                className="text-xs"
+              >
+                Clear Errors
+              </Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <h4 className="font-semibold text-sm">Session Info:</h4>
+                <p className="text-xs text-gray-600">
+                  User ID: {session?.user?.id || 'None'}<br/>
+                  Email: {email || 'None'}<br/>
+                  Full Name: {fullName || 'None'}
+                </p>
+              </div>
+              <div>
+                <h4 className="font-semibold text-sm">Stored Errors:</h4>
+                {(() => {
+                  const errors = getStoredErrors()
+                  return (
+                    <div className="text-xs text-gray-600">
+                      <p>Auth Errors: {errors.auth.length}</p>
+                      <p>Routing Errors: {errors.routing.length}</p>
+                      {errors.auth.length > 0 && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer">Recent Auth Errors</summary>
+                          <pre className="mt-1 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-32">
+                            {JSON.stringify(errors.auth.slice(-3), null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                      {errors.routing.length > 0 && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer">Recent Routing Errors</summary>
+                          <pre className="mt-1 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-32">
+                            {JSON.stringify(errors.routing.slice(-3), null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  )
+                })()}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Demo note for judges */}
       <Card className="rounded-2xl shadow border">
         <CardHeader>
@@ -215,6 +439,7 @@ export default function DashboardIndex() {
               average is used as the threshold.
             </li>
             <li>The AI report is a lightweight demo summary generated from the seeded data.</li>
+            <li>Use the "Show Debug" button above to view authentication and routing error logs for testing.</li>
           </ul>
         </CardContent>
       </Card>

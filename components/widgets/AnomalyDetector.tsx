@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { AlertTriangle } from "lucide-react";
+import { getGovernmentAveragesMap } from "@/lib/api/govData";
 
 type ApplianceLog = {
 	id: string;
@@ -20,43 +21,42 @@ export default function AnomalyDetector() {
 
 	useEffect(() => {
 		const fetchLogs = async () => {
-			// load gov mock
 			try {
-				const res = await fetch("/data/gov_energy_mock.json", { cache: "no-store" });
-				const json = await res.json();
-				const map: Record<string, number> = {};
-				for (const r of json) {
-					map[(r.appliance as string).toLowerCase()] = Number(r.avg_usage_minutes) || 0;
+				// Load government averages using the integration layer
+				const govAveragesMap = await getGovernmentAveragesMap();
+				setGovAverages(govAveragesMap);
+
+				// Load user custom thresholds
+				const { data: sessionData } = await supabase.auth.getSession();
+				const uid = sessionData.session?.user.id;
+				if (uid) {
+					const { data: ct } = await supabase
+						.from("custom_thresholds")
+						.select("appliance, minutes")
+						.eq("user_id", uid);
+					const cm: Record<string, number> = {};
+					(ct || []).forEach((r: any) => (cm[(r.appliance as string).toLowerCase()] = Number(r.minutes) || 0));
+					setCustom(cm);
 				}
-				setGovAverages(map);
-			} catch {}
 
-			// load user custom thresholds
-			const { data: sessionData } = await supabase.auth.getSession();
-			const uid = sessionData.session?.user.id;
-			if (uid) {
-				const { data: ct } = await supabase
-					.from("custom_thresholds")
-					.select("appliance, minutes")
-					.eq("user_id", uid);
-				const cm: Record<string, number> = {};
-				(ct || []).forEach((r: any) => (cm[(r.appliance as string).toLowerCase()] = Number(r.minutes) || 0));
-				setCustom(cm);
-			}
-			const { data, error } = await supabase
-				.from("appliance_logs")
-				.select("*")
-				.order("log_time", { ascending: false })
-				.limit(20);
+				// Load appliance logs
+				const { data, error } = await supabase
+					.from("appliance_logs")
+					.select("*")
+					.order("log_time", { ascending: false })
+					.limit(20);
 
-			if (error) {
-				console.error(error);
-				return;
-			}
+				if (error) {
+					console.error("Error fetching appliance logs:", error);
+					return;
+				}
 
-			if (data) {
-				setLogs(data as ApplianceLog[]);
-				detectAnomalies(data as ApplianceLog[]);
+				if (data) {
+					setLogs(data as ApplianceLog[]);
+					detectAnomalies(data as ApplianceLog[]);
+				}
+			} catch (error) {
+				console.error("Error in fetchLogs:", error);
 			}
 		};
 

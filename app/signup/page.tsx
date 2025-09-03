@@ -1,14 +1,19 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Mail, Lock, Eye, EyeOff, User } from "lucide-react"
+import { supabase } from "@/lib/supabase"
+import { ensureUserAndPatient } from "@/lib/supaHelpers"
+import { createAuthError, logAuthError, getAuthErrorMessage } from "@/lib/errorHandling"
 
 export default function SignupPage() {
+  const router = useRouter()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -17,6 +22,22 @@ export default function SignupPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          console.log("User already logged in, redirecting to dashboard")
+          router.push("/dashboard")
+        }
+      } catch (error) {
+        console.error("Error checking session:", error)
+      }
+    }
+    checkSession()
+  }, [router])
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {}
@@ -37,20 +58,87 @@ export default function SignupPage() {
     if (!validateForm()) return
     
     setIsLoading(true)
+    setErrors({})
     
-    // TODO: Implement Supabase auth
-    console.log("Signup attempt:", { name, email })
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // Persist mock session and profile
-    localStorage.setItem("eldergrid_auth_token", "mock-token")
-    localStorage.setItem("eldergrid_profile", JSON.stringify({ name, email }))
+    try {
+      console.log("Signup attempt:", { name, email })
+      
+      // Sign up with Supabase
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: name
+          }
+        }
+      })
 
-    // Redirect to dashboard
-    window.location.href = "/dashboard"
-    setIsLoading(false)
+      if (authError) {
+        console.error("Signup error:", authError)
+        const error = createAuthError('signup', authError.message, { email, name })
+        logAuthError(error)
+        setErrors({ general: getAuthErrorMessage(error) })
+        setIsLoading(false)
+        return
+      }
+
+      if (!authData.user) {
+        console.error("No user returned from signup")
+        const error = createAuthError('signup', 'No user returned from signup', { email, name })
+        logAuthError(error)
+        setErrors({ general: getAuthErrorMessage(error) })
+        setIsLoading(false)
+        return
+      }
+
+      console.log("Signup successful, user:", authData.user.id)
+
+      // Wait for session to be established
+      let sessionEstablished = false
+      let attempts = 0
+      const maxAttempts = 10
+
+      while (!sessionEstablished && attempts < maxAttempts) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          sessionEstablished = true
+          console.log("Session established, redirecting to dashboard")
+          break
+        }
+        await new Promise(resolve => setTimeout(resolve, 500))
+        attempts++
+      }
+
+      if (!sessionEstablished) {
+        console.error("Session not established after signup")
+        const error = createAuthError('session', 'Session not established after signup', { email, userId: authData.user.id })
+        logAuthError(error)
+        setErrors({ general: getAuthErrorMessage(error) })
+        setIsLoading(false)
+        return
+      }
+
+      // Ensure user and patient records exist
+      try {
+        await ensureUserAndPatient()
+        console.log("User and patient records ensured")
+      } catch (error) {
+        console.error("Error ensuring user/patient records:", error)
+        // Continue anyway, this is not critical for the redirect
+      }
+
+      // Redirect to dashboard
+      router.push("/dashboard")
+      
+    } catch (error) {
+      console.error("Unexpected signup error:", error)
+      const authError = createAuthError('signup', 'Unexpected signup error', { error: error instanceof Error ? error.message : String(error), email, name })
+      logAuthError(authError)
+      setErrors({ general: getAuthErrorMessage(authError) })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -165,6 +253,12 @@ export default function SignupPage() {
                 <p className="text-sm text-destructive">{errors.confirmPassword}</p>
               )}
             </div>
+
+            {errors.general && (
+              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                {errors.general}
+              </div>
+            )}
 
             <Button
               type="submit"

@@ -1,42 +1,120 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Mail, Lock, Eye, EyeOff } from "lucide-react"
+import { supabase } from "@/lib/supabase"
+import { ensureUserAndPatient } from "@/lib/supaHelpers"
+import { createAuthError, logAuthError, getAuthErrorMessage } from "@/lib/errorHandling"
 
 export default function LoginPage() {
+  const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
+
+  // Check if user is already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          console.log("User already logged in, redirecting to dashboard")
+          router.push("/dashboard")
+        }
+      } catch (error) {
+        console.error("Error checking session:", error)
+      }
+    }
+    checkSession()
+  }, [router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setError("")
     
-    // TODO: Implement Supabase auth
-    console.log("Login attempt:", { email, password })
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // Mock auth token to persist session
-    localStorage.setItem("eldergrid_auth_token", "mock-token")
+    try {
+      console.log("Login attempt:", { email })
+      
+      // Sign in with Supabase
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
 
-    // Save a simulated profile using the email local-part as display name
-    const derivedName = email.includes("@") ? email.split("@")[0] : email || "User"
-    localStorage.setItem(
-      "eldergrid_profile",
-      JSON.stringify({ name: derivedName, email })
-    )
-    
-    // Redirect to dashboard
-    window.location.href = "/dashboard"
-    setIsLoading(false)
+      if (authError) {
+        console.error("Login error:", authError)
+        const error = createAuthError('login', authError.message, { email })
+        logAuthError(error)
+        setError(getAuthErrorMessage(error))
+        setIsLoading(false)
+        return
+      }
+
+      if (!authData.user) {
+        console.error("No user returned from login")
+        const error = createAuthError('login', 'No user returned from login', { email })
+        logAuthError(error)
+        setError(getAuthErrorMessage(error))
+        setIsLoading(false)
+        return
+      }
+
+      console.log("Login successful, user:", authData.user.id)
+
+      // Wait for session to be established
+      let sessionEstablished = false
+      let attempts = 0
+      const maxAttempts = 10
+
+      while (!sessionEstablished && attempts < maxAttempts) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          sessionEstablished = true
+          console.log("Session established, redirecting to dashboard")
+          break
+        }
+        await new Promise(resolve => setTimeout(resolve, 500))
+        attempts++
+      }
+
+      if (!sessionEstablished) {
+        console.error("Session not established after login")
+        const error = createAuthError('session', 'Session not established after login', { email, userId: authData.user.id })
+        logAuthError(error)
+        setError(getAuthErrorMessage(error))
+        setIsLoading(false)
+        return
+      }
+
+      // Ensure user and patient records exist
+      try {
+        await ensureUserAndPatient()
+        console.log("User and patient records ensured")
+      } catch (error) {
+        console.error("Error ensuring user/patient records:", error)
+        // Continue anyway, this is not critical for the redirect
+      }
+
+      // Redirect to dashboard
+      router.push("/dashboard")
+      
+    } catch (error) {
+      console.error("Unexpected login error:", error)
+      const authError = createAuthError('login', 'Unexpected login error', { error: error instanceof Error ? error.message : String(error), email })
+      logAuthError(authError)
+      setError(getAuthErrorMessage(authError))
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -103,6 +181,12 @@ export default function LoginPage() {
                 Forgot Password?
               </Link>
             </div>
+
+            {error && (
+              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                {error}
+              </div>
+            )}
 
             <Button
               type="submit"

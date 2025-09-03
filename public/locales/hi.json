@@ -1,0 +1,31 @@
+{
+  "greeting": "नमस्ते, शांता देवी",
+  "energyOverview": "ऊर्जा अवलोकन",
+  "currentUsage": "वर्तमान उपयोग",
+  "carbonSavings": "इस सप्ताह कार्बन बचत",
+  "weeklyUsage": "साप्ताहिक ऊर्जा उपयोग",
+  "deviceControl": "उपकरण नियंत्रण",
+  "aiInsights": "AI अंतर्दृष्टि",
+  "familyMode": "पारिवारिक मोड",
+  "readAloud": "जोर से पढ़ें",
+  "darkMode": "डार्क मोड",
+  "language": "भाषा",
+  "on": "चालू",
+  "off": "बंद",
+  "runtime": "चलने का समय",
+  "notifyFamily": "परिवार को सूचित करें",
+  "generateReport": "AI रिपोर्ट बनाएं",
+  "profileSettings": "प्रोफ़ाइल सेटिंग्स",
+  "caregiverMode": "देखभालकर्ता मोड",
+  "greenScore": "हरित स्कोर",
+  "mediumUsage": "मध्यम उपयोग",
+  "familyAccessEnabled": "पारिवारिक पहुंच सक्षम",
+  "runningAlert": "{{time}} से चल रहा है - बंद करने पर विचार करें",
+  "aiInsightText": "इस सप्ताह आपके पंखे ने सबसे अधिक ऊर्जा का उपयोग किया, लेकिन आपने गीजर को समय पर बंद करके ₹95 की बचत की। आपका बेडरूम का पंखा 6 घंटे से चल रहा है - अधिक ऊर्जा बचाने के लिए इसे बंद करने पर विचार करें। बेहतरीन काम जारी रखें!",
+  "languages": {
+    "english": "English",
+    "hindi": "हिंदी",
+    "bengali": "বাংলা",
+    "tamil": "தமிழ்"
+  }
+}

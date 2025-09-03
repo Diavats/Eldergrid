@@ -1,0 +1,31 @@
+{
+  "greeting": "Good morning, Shanta Devi",
+  "energyOverview": "Energy Overview",
+  "currentUsage": "Current Usage",
+  "carbonSavings": "Carbon Savings This Week",
+  "weeklyUsage": "Weekly Energy Usage",
+  "deviceControl": "Device Control",
+  "aiInsights": "AI Insights",
+  "familyMode": "Family Mode",
+  "readAloud": "Read Aloud",
+  "darkMode": "Dark Mode",
+  "language": "Language",
+  "on": "On",
+  "off": "Off",
+  "runtime": "Runtime",
+  "notifyFamily": "Notify Family",
+  "generateReport": "Generate AI Report",
+  "profileSettings": "Profile Settings",
+  "caregiverMode": "Caregiver Mode",
+  "greenScore": "Green Score",
+  "mediumUsage": "Medium Usage",
+  "familyAccessEnabled": "Family Access Enabled",
+  "runningAlert": "Running for {{time}} - consider turning off",
+  "aiInsightText": "This week your fan used the most energy, but you saved ₹95 by turning off the geyser on time. Your bedroom fan has been running for 6 hours - consider turning it off to save more energy. Keep up the great work!",
+  "languages": {
+    "english": "English",
+    "hindi": "हिंदी",
+    "bengali": "বাংলা",
+    "tamil": "தமிழ்"
+  }
+}

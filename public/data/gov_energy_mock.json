@@ -1,0 +1,28 @@
+[
+  {
+    "appliance": "Geyser",
+    "avg_usage_minutes": 45,
+    "region": "Delhi",
+    "source": "Gov Energy Survey 2022"
+  },
+  {
+    "appliance": "Heater",
+    "avg_usage_minutes": 120,
+    "region": "Rajasthan",
+    "source": "Gov Energy Survey 2022"
+  },
+  {
+    "appliance": "Fan",
+    "avg_usage_minutes": 300,
+    "region": "Maharashtra",
+    "source": "Gov Energy Survey 2022"
+  },
+  {
+    "appliance": "TV",
+    "avg_usage_minutes": 240,
+    "region": "Karnataka",
+    "source": "Gov Energy Survey 2022"
+  }
+]
+
+

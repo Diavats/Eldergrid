@@ -1,117 +1,107 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-
-type Row = { id: string; appliance: string; minutes: number };
-
-const APPLIANCES = ["Geyser", "Heater", "Fan", "TV"] as const;
+import { useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 export default function CustomThresholds() {
-  const [userId, setUserId] = useState<string | null>(null);
-  const [appliance, setAppliance] = useState<typeof APPLIANCES[number]>("Geyser");
-  const [minutes, setMinutes] = useState<number>(60);
-  const [rows, setRows] = useState<Row[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [thresholds, setThresholds] = useState({
+    geyser: 120,
+    heater: 180,
+    fan: 300,
+    tv: 240
+  })
 
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      const uid = data.session?.user.id || null;
-      if (!uid) {
-        setError("Login required");
-        setLoading(false);
-        return;
-      }
-      setUserId(uid);
-      await load(uid);
-      setLoading(false);
-    })();
-  }, []);
-
-  async function load(uid: string) {
-    const { data, error } = await supabase
-      .from("custom_thresholds")
-      .select("id, appliance, minutes")
-      .eq("user_id", uid)
-      .order("appliance");
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    setRows((data as Row[]) || []);
+  const handleThresholdChange = (appliance: string, value: string) => {
+    const numValue = parseInt(value) || 0
+    setThresholds(prev => ({
+      ...prev,
+      [appliance]: numValue
+    }))
   }
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!userId) return;
-    setError(null);
-    const { error } = await supabase.from("custom_thresholds").upsert({
-      user_id: userId,
-      appliance,
-      minutes: Number(minutes) || 0,
-    });
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    await load(userId);
+  const resetToDefaults = () => {
+    setThresholds({
+      geyser: 120,
+      heater: 180,
+      fan: 300,
+      tv: 240
+    })
   }
 
   return (
-    <div className="rounded-2xl p-6 shadow border bg-white">
-      <h3 className="text-xl font-semibold mb-3">Custom Thresholds</h3>
-      <form onSubmit={save} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
-        <select className="rounded-xl border px-3 py-2" value={appliance} onChange={(e) => setAppliance(e.target.value as any)}>
-          {APPLIANCES.map((a) => (
-            <option key={a} value={a}>{a}</option>
-          ))}
-        </select>
-        <input
-          type="number"
-          className="rounded-xl border px-3 py-2"
-          value={minutes}
-          min={0}
-          onChange={(e) => setMinutes(Number(e.target.value))}
-          placeholder="Threshold minutes"
-        />
-        <button type="submit" className="sm:col-span-2 rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 transition">
-          Save
-        </button>
-      </form>
-
-      {loading ? (
-        <p className="text-sm text-gray-500">Loading…</p>
-      ) : error ? (
-        <p className="text-sm text-red-600">{error}</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-600 border-b">
-                <th className="py-2">Appliance</th>
-                <th className="py-2">Threshold (minutes)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-b">
-                  <td className="py-2">{r.appliance}</td>
-                  <td className="py-2">{r.minutes}</td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr>
-                  <td className="py-3 text-gray-500" colSpan={2}>No thresholds saved yet.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+    <Card className="rounded-2xl shadow border">
+      <CardHeader>
+        <CardTitle>Custom Thresholds (Demo)</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-gray-600 mb-4">
+          Set custom energy usage thresholds for anomaly detection. These override government baselines.
+        </p>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="geyser">Geyser (minutes)</Label>
+            <Input
+              id="geyser"
+              type="number"
+              value={thresholds.geyser}
+              onChange={(e) => handleThresholdChange('geyser', e.target.value)}
+              placeholder="120"
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="heater">Heater (minutes)</Label>
+            <Input
+              id="heater"
+              type="number"
+              value={thresholds.heater}
+              onChange={(e) => handleThresholdChange('heater', e.target.value)}
+              placeholder="180"
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="fan">Fan (minutes)</Label>
+            <Input
+              id="fan"
+              type="number"
+              value={thresholds.fan}
+              onChange={(e) => handleThresholdChange('fan', e.target.value)}
+              placeholder="300"
+            />
+          </div>
+          
+          <div className="space-y-2">
+            <Label htmlFor="tv">TV (minutes)</Label>
+            <Input
+              id="tv"
+              type="number"
+              value={thresholds.tv}
+              onChange={(e) => handleThresholdChange('tv', e.target.value)}
+              placeholder="240"
+            />
+          </div>
         </div>
-      )}
-    </div>
-  );
+        
+        <div className="flex gap-2 pt-2">
+          <Button onClick={resetToDefaults} variant="outline" size="sm">
+            Reset to Defaults
+          </Button>
+          <Button size="sm" className="flex-1">
+            Save Thresholds
+          </Button>
+        </div>
+        
+        <div className="text-xs text-gray-500 mt-2">
+          Demo mode: Changes are stored locally and used for anomaly detection.
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 

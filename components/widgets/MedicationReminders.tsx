@@ -1,202 +1,217 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { ensureUserAndPatient } from "@/lib/supaHelpers";
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Clock, Plus, Trash2 } from "lucide-react"
 
-type Med = {
-	id: string;
-	medication_name: string;
-	dosage: string | null;
-	frequency: string | null; // time-of-day label like "08:00 daily" or "9 PM"
-	start_date: string | null; // ISO date (YYYY-MM-DD)
-	end_date: string | null;
-	created_at: string | null;
-};
+interface Medication {
+  id: string
+  name: string
+  time: string
+  taken: boolean
+  dosage: string
+}
 
 export default function MedicationReminders() {
-	const [patientId, setPatientId] = useState<string | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [list, setList] = useState<Med[]>([]);
-	const [error, setError] = useState<string | null>(null);
+  const [medications, setMedications] = useState<Medication[]>([
+    {
+      id: "1",
+      name: "Blood Pressure Medicine",
+      time: "08:00",
+      taken: false,
+      dosage: "1 tablet"
+    },
+    {
+      id: "2",
+      name: "Diabetes Medicine",
+      time: "12:00",
+      taken: true,
+      dosage: "1 tablet"
+    },
+    {
+      id: "3",
+      name: "Evening Medicine",
+      time: "18:00",
+      taken: false,
+      dosage: "1 tablet"
+    }
+  ])
 
-	// form state
-	const [medicationName, setMedicationName] = useState("");
-	const [dosage, setDosage] = useState("");
-	const [timeOfDay, setTimeOfDay] = useState(""); // e.g., "08:00" or "21:30"
-	const [frequency, setFrequency] = useState("daily"); // daily / twice-daily / as-needed
+  const [newMedication, setNewMedication] = useState({
+    name: "",
+    time: "",
+    dosage: ""
+  })
 
-	useEffect(() => {
-		(async () => {
-			try {
-				const { patientId } = await ensureUserAndPatient();
-				setPatientId(patientId);
-				await fetchMeds(patientId);
-			} catch (e: any) {
-				setError(e?.message || "Failed to initialize reminders.");
-			} finally {
-				setLoading(false);
-			}
-		})();
-	}, []);
+  const [isLoading, setIsLoading] = useState(true)
 
-	async function fetchMeds(pid: string) {
-		const { data, error } = await supabase
-			.from("medications")
-			.select(
-				"id, medication_name, dosage, frequency, start_date, end_date, created_at"
-			)
-			.eq("patient_id", pid)
-			.order("created_at", { ascending: false });
-		if (error) {
-			setError(error.message);
-			return;
-		}
-		setList((data as Med[]) || []);
-	}
+  useEffect(() => {
+    // Simulate loading
+    const timer = setTimeout(() => {
+      setIsLoading(false)
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [])
 
-	async function addMedication(e: React.FormEvent) {
-		e.preventDefault();
-		if (!patientId) return;
-		if (!medicationName.trim()) {
-			setError("Please enter a medication name.");
-			return;
-		}
-		setError(null);
+  const addMedication = () => {
+    if (newMedication.name && newMedication.time) {
+      const medication: Medication = {
+        id: Date.now().toString(),
+        name: newMedication.name,
+        time: newMedication.time,
+        taken: false,
+        dosage: newMedication.dosage || "1 tablet"
+      }
+      setMedications([...medications, medication])
+      setNewMedication({ name: "", time: "", dosage: "" })
+    }
+  }
 
-		// We'll store time-of-day inside frequency text to keep it schema-free.
-		const freqLabel =
-			timeOfDay && frequency
-				? `${timeOfDay} • ${frequency}`
-				: timeOfDay
-				? timeOfDay
-				: frequency;
+  const toggleTaken = (id: string) => {
+    setMedications(medications.map(med => 
+      med.id === id ? { ...med, taken: !med.taken } : med
+    ))
+  }
 
-		const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const removeMedication = (id: string) => {
+    setMedications(medications.filter(med => med.id !== id))
+  }
 
-		const { error } = await supabase.from("medications").insert([
-			{
-				patient_id: patientId,
-				medication_name: medicationName.trim(),
-				dosage: dosage.trim() || null,
-				frequency: freqLabel || null,
-				start_date: today,
-				end_date: null,
-			},
-		]);
+  const getNextReminder = () => {
+    const now = new Date()
+    const currentTime = now.getHours() * 60 + now.getMinutes()
+    
+    const upcoming = medications
+      .filter(med => !med.taken)
+      .map(med => {
+        const [hours, minutes] = med.time.split(':').map(Number)
+        const medTime = hours * 60 + minutes
+        return { ...med, minutesUntil: medTime - currentTime }
+      })
+      .filter(med => med.minutesUntil > 0)
+      .sort((a, b) => a.minutesUntil - b.minutesUntil)
+    
+    return upcoming[0]
+  }
 
-		if (error) {
-			setError(error.message);
-			return;
-		}
+  if (isLoading) {
+    return (
+      <Card className="rounded-2xl shadow border">
+        <CardHeader>
+          <CardTitle>Medication Reminders</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-3">
+            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+            <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
-		// reset form + refresh list
-		setMedicationName("");
-		setDosage("");
-		setTimeOfDay("");
-		setFrequency("daily");
-		await fetchMeds(patientId);
-	}
+  const nextReminder = getNextReminder()
 
-	async function deleteMedication(id: string) {
-		if (!patientId) return;
-		const { error } = await supabase.from("medications").delete().eq("id", id);
-		if (error) {
-			setError(error.message);
-			return;
-		}
-		await fetchMeds(patientId);
-	}
-
-	if (loading) {
-		return (
-			<div className="w-full rounded-2xl border p-4 shadow-sm">
-				<h3 className="text-lg font-semibold">Medication Reminders</h3>
-				<p className="text-sm text-muted-foreground mt-2">Loading…</p>
-			</div>
-		);
-	}
-
-	return (
-		<div className="w-full rounded-2xl border p-4 shadow-sm">
-			<div className="flex items-center justify-between">
-				<h3 className="text-lg font-semibold">Medication Reminders</h3>
-				{error && (
-					<span className="text-sm text-red-600 max-w-[60%]">{error}</span>
-				)}
-			</div>
-
-			{/* Add Form */}
-			<form onSubmit={addMedication} className="mt-4 grid gap-3 sm:grid-cols-4">
-				<input
-					className="col-span-2 rounded-xl border px-3 py-2"
-					placeholder="Medication name (e.g., Metformin)"
-					value={medicationName}
-					onChange={(e) => setMedicationName(e.target.value)}
-					required
-				/>
-				<input
-					className="rounded-xl border px-3 py-2"
-					placeholder="Dosage (e.g., 500mg)"
-					value={dosage}
-					onChange={(e) => setDosage(e.target.value)}
-				/>
-				<input
-					type="time"
-					className="rounded-xl border px-3 py-2"
-					value={timeOfDay}
-					onChange={(e) => setTimeOfDay(e.target.value)}
-				/>
-
-				<select
-					className="rounded-xl border px-3 py-2"
-					value={frequency}
-					onChange={(e) => setFrequency(e.target.value)}
-				>
-					<option value="daily">Daily</option>
-					<option value="twice daily">Twice daily</option>
-					<option value="as needed">As needed</option>
-				</select>
-
-				<button
-					type="submit"
-					className="sm:col-span-2 rounded-xl bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 transition"
-				>
-					Add Reminder
-				</button>
-			</form>
-
-			{/* List */}
-			<div className="mt-6 space-y-3">
-				{list.length === 0 ? (
-					<p className="text-sm text-muted-foreground">
-						No medications yet. Add your first reminder above.
-					</p>
-				) : (
-					list.map((m) => (
-						<div
-							key={m.id}
-							className="flex items-center justify-between rounded-xl border px-4 py-3"
-						>
-							<div>
-								<div className="font-semibold">{m.medication_name}</div>
-								<div className="text-sm text-muted-foreground">
-									{m.dosage ? `${m.dosage} • ` : ""}
-									{m.frequency || "—"}
-								</div>
-							</div>
-							<button
-								onClick={() => deleteMedication(m.id)}
-								className="rounded-lg border px-3 py-1 text-sm hover:bg-red-50 hover:text-red-600"
-							>
-								Delete
-							</button>
-						</div>
-					))
-				)}
-			</div>
-		</div>
-	);
+  return (
+    <Card className="rounded-2xl shadow border">
+      <CardHeader>
+        <CardTitle>Medication Reminders (Demo)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-gray-600 mb-4">
+          Track your daily medications and set reminders for timely consumption.
+        </p>
+        
+        {nextReminder && (
+          <div className="p-3 bg-blue-50 rounded-lg mb-4">
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-800">Next Reminder</span>
+            </div>
+            <p className="text-sm text-blue-700 mt-1">
+              {nextReminder.name} at {nextReminder.time} ({nextReminder.dosage})
+            </p>
+          </div>
+        )}
+        
+        <div className="space-y-3 mb-4">
+          {medications.map((medication) => (
+            <div key={medication.id} className="flex items-center justify-between p-3 border rounded-lg">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  checked={medication.taken}
+                  onCheckedChange={() => toggleTaken(medication.id)}
+                />
+                <div>
+                  <p className={`font-medium ${medication.taken ? 'line-through text-gray-500' : ''}`}>
+                    {medication.name}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {medication.time} • {medication.dosage}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeMedication(medication.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+        
+        <div className="border-t pt-4">
+          <h4 className="font-medium text-sm mb-3">Add New Medication</h4>
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="med-name">Medication Name</Label>
+              <Input
+                id="med-name"
+                value={newMedication.name}
+                onChange={(e) => setNewMedication({...newMedication, name: e.target.value})}
+                placeholder="e.g., Blood Pressure Medicine"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="med-time">Time</Label>
+                <Input
+                  id="med-time"
+                  type="time"
+                  value={newMedication.time}
+                  onChange={(e) => setNewMedication({...newMedication, time: e.target.value})}
+                />
+              </div>
+              <div>
+                <Label htmlFor="med-dosage">Dosage</Label>
+                <Input
+                  id="med-dosage"
+                  value={newMedication.dosage}
+                  onChange={(e) => setNewMedication({...newMedication, dosage: e.target.value})}
+                  placeholder="1 tablet"
+                />
+              </div>
+            </div>
+            <Button onClick={addMedication} className="w-full">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Medication
+            </Button>
+          </div>
+        </div>
+        
+        <div className="text-xs text-gray-500 mt-4">
+          Demo mode: Medication data is stored locally for demonstration purposes.
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 

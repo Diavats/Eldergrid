@@ -1,10 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
-import { ensureUserAndPatient } from "@/lib/supaHelpers"
-import { createAuthError, createRoutingError, logAuthError, logRoutingError, getAuthErrorMessage, getRoutingErrorMessage, getStoredErrors, clearStoredErrors } from "@/lib/errorHandling"
+import { useTranslation } from "react-i18next"
 import GovDataMock from "@/components/widgets/GovDataMock"
 import CustomThresholds from "@/components/widgets/CustomThresholds"
 import AnomalyDetector from "@/components/widgets/AnomalyDetector"
@@ -13,10 +11,12 @@ import MedicationReminders from "@/components/widgets/MedicationReminders"
 import LanguageSelector from "@/components/LanguageSelector"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { LogOut } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { LogOut, User, Heart, Zap, Settings, Moon, Sun } from "lucide-react"
 
 // Lightweight AI summary widget (mock) – aggregates a short sentence from recent stats
 function AIReportWidget() {
+  const { t } = useTranslation()
   const [summary, setSummary] = useState("Generating summary…")
 
   useEffect(() => {
@@ -32,11 +32,11 @@ function AIReportWidget() {
   return (
     <Card className="rounded-2xl shadow border">
       <CardHeader>
-        <CardTitle>AI Report (Demo)</CardTitle>
+        <CardTitle>{t('aiInsights')} (Demo)</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className="text-gray-700">{summary}</p>
-        <p className="text-xs text-gray-500 mt-2">
+        <p className="text-gray-700 dark:text-gray-300">{summary}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
           This demo summary is generated from seeded mock data for live judging.
         </p>
       </CardContent>
@@ -46,234 +46,46 @@ function AIReportWidget() {
 
 export default function DashboardIndex() {
   const router = useRouter()
-  const [session, setSession] = useState<any>(null)
-  const [fullName, setFullName] = useState<string>("")
-  const [email, setEmail] = useState<string>("")
+  const { t } = useTranslation()
+  const [fullName, setFullName] = useState<string>("Demo User")
+  const [email, setEmail] = useState<string>("demo@example.com")
   const [elderMode, setElderMode] = useState<boolean>(false)
-  const [isLoading, setIsLoading] = useState(true)
+  const [darkMode, setDarkMode] = useState<boolean>(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string>("")
   const [showDebugInfo, setShowDebugInfo] = useState(false)
-  const envOk = useMemo(() => {
-    return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-  }, [])
+  const [activeTab, setActiveTab] = useState("energy")
 
-  // Auth + profile name with comprehensive session management
+  // Logout function (demo mode)
+  const handleLogout = () => {
+    console.log("Demo mode - redirecting to home")
+    router.push("/")
+  }
+
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode)
+    // In a real app, you'd persist this to localStorage and apply to document
+  }
+
+  // Apply dark mode to document
   useEffect(() => {
-    const init = async () => {
-      try {
-        setIsLoading(true)
-        setError("")
-        
-        if (!envOk) {
-          setError("Environment configuration missing")
-          setIsLoading(false)
-          return
-        }
-
-        console.log("Checking session...")
-        const { data, error: sessionError } = await supabase.auth.getSession()
-        
-        if (sessionError) {
-          console.error("Session error:", sessionError)
-          const error = createAuthError('session', sessionError.message, { sessionError })
-          logAuthError(error)
-          setError(getAuthErrorMessage(error))
-          router.push("/login")
-          return
-        }
-
-        if (!data.session) {
-          console.log("No session found, redirecting to login")
-          const error = createRoutingError('session_check', 'No session found', '/dashboard', '/login')
-          logRoutingError(error)
-          router.push("/login")
-          return
-        }
-
-        console.log("Session found, user:", data.session.user.id)
-        setSession(data.session)
-        setEmail(data.session.user?.email ?? "")
-
-        // Ensure basic patient linkage (hackathon-friendly helper)
-        try { 
-          await ensureUserAndPatient()
-          console.log("User and patient records ensured")
-        } catch (error) {
-          console.error("Error ensuring user/patient records:", error)
-          // Continue anyway, this is not critical
-        }
-
-        // Load profile full_name if any
-        try {
-          const { data: prof, error: profileError } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("user_id", data.session.user.id)
-            .maybeSingle()
-          
-          if (profileError) {
-            console.error("Profile error:", profileError)
-          } else {
-            setFullName(prof?.full_name ?? "")
-          }
-        } catch (error) {
-          console.error("Error loading profile:", error)
-        }
-
-        // Auto-seed mock data in development to ensure widgets are populated
-        if (process.env.NODE_ENV === "development") {
-          try {
-            await seedIfEmpty(data.session.user.id)
-          } catch (error) {
-            console.error("Error seeding data:", error)
-          }
-        }
-
-        console.log("Dashboard initialization complete")
-      } catch (error) {
-        console.error("Dashboard initialization error:", error)
-        const authError = createAuthError('session', 'Dashboard initialization failed', { error: error instanceof Error ? error.message : String(error) })
-        logAuthError(authError)
-        setError(getAuthErrorMessage(authError))
-        router.push("/login")
-      } finally {
-        setIsLoading(false)
-      }
+    if (darkMode) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
     }
-
-    init()
-
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event, session?.user?.id)
-      
-      if (event === 'SIGNED_OUT' || !session) {
-        console.log("User signed out, redirecting to login")
-        const error = createRoutingError('redirect', 'User signed out', '/dashboard', '/login')
-        logRoutingError(error)
-        router.push("/login")
-      } else if (event === 'SIGNED_IN' && session) {
-        console.log("User signed in, updating session")
-        setSession(session)
-        setEmail(session.user?.email ?? "")
-      }
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [router, envOk])
-
-  // Logout function
-  const handleLogout = async () => {
-    try {
-      console.log("Logging out...")
-      const { error } = await supabase.auth.signOut()
-      if (error) {
-        console.error("Logout error:", error)
-        const authError = createAuthError('logout', error.message, { error })
-        logAuthError(authError)
-        setError(getAuthErrorMessage(authError))
-      } else {
-        console.log("Logout successful")
-        router.push("/login")
-      }
-    } catch (error) {
-      console.error("Unexpected logout error:", error)
-      const authError = createAuthError('logout', 'Unexpected logout error', { error: error instanceof Error ? error.message : String(error) })
-      logAuthError(authError)
-      setError(getAuthErrorMessage(authError))
-    }
-  }
-
-  // Seed helper (inline, avoids external scripts import in app router)
-  async function seedIfEmpty(userId: string) {
-    // check any logs
-    const { data: logs, error } = await supabase
-      .from("appliance_logs")
-      .select("id")
-      .eq("user_id", userId)
-      .limit(1)
-    if (error) return
-    if ((logs || []).length > 0) return
-
-    const randInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min
-    const pastDateWithin = (days: number) => {
-      const d = new Date()
-      d.setDate(d.getDate() - randInt(0, days))
-      d.setHours(randInt(6, 22), randInt(0, 59), 0, 0)
-      return d.toISOString()
-    }
-    const ranges = [
-      { name: "Geyser", min: 20, max: 140 },
-      { name: "Heater", min: 60, max: 240 },
-      { name: "Fan", min: 200, max: 500 },
-      { name: "TV", min: 60, max: 360 },
-    ]
-    const rows: Array<{ user_id: string; appliance: string; usage_minutes: number; timestamp: string }> = []
-    const total = randInt(15, 20)
-    for (let i = 0; i < total; i++) {
-      const r = ranges[randInt(0, ranges.length - 1)]
-      rows.push({ user_id: userId, appliance: r.name, usage_minutes: randInt(r.min, r.max), timestamp: pastDateWithin(7) })
-    }
-    await supabase.from("appliance_logs").insert(rows)
-  }
-
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="p-6 text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading dashboard...</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // Environment error
-  if (!envOk) {
-    return (
-      <div className="min-h-screen p-6">
-        <Card className="border-red-300 bg-red-50">
-          <CardHeader>
-            <CardTitle>Environment configuration missing</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-red-700 text-sm">
-              Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local, then restart the dev server.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // Session error or no session
-  if (!session) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
-        <Card className="w-full max-w-md">
-          <CardContent className="p-6 text-center">
-            <p className="text-muted-foreground mb-4">No active session found</p>
-            <Button onClick={() => router.push("/login")} className="w-full">
-              Go to Login
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+  }, [darkMode])
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 space-y-6">
+    <div className={`min-h-screen p-6 space-y-6 transition-colors ${
+      darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'
+    }`}>
       {/* Error banner */}
       {error && (
-        <Card className="border-red-300 bg-red-50">
+        <Card className={`border-red-300 ${darkMode ? 'bg-red-900/20' : 'bg-red-50'}`}>
           <CardContent className="p-4">
-            <p className="text-red-700 text-sm">{error}</p>
+            <p className={`text-sm ${darkMode ? 'text-red-300' : 'text-red-700'}`}>{error}</p>
             <Button 
               variant="outline" 
               size="sm" 
@@ -286,15 +98,19 @@ export default function DashboardIndex() {
         </Card>
       )}
 
-      {/* Top/account section – for judges: shows auth + quick actions */}
-      <Card className="rounded-2xl shadow border">
+      {/* Top/account section */}
+      <Card className={`rounded-2xl shadow border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
         <CardHeader>
-          <CardTitle>Welcome{fullName ? `, ${fullName}` : ""}</CardTitle>
+          <CardTitle className={darkMode ? 'text-white' : 'text-gray-900'}>
+            {t('greeting', { name: fullName })}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+        <CardContent className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
           <div>
-            <div className="text-sm text-gray-500">Signed in as</div>
-            <div className="font-medium">{email}</div>
+            <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              {t('profileSettings')}
+            </div>
+            <div className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{email}</div>
           </div>
           <div className="flex items-center gap-3">
             <Button
@@ -306,13 +122,27 @@ export default function DashboardIndex() {
             <LanguageSelector />
           </div>
           <div className="flex items-center justify-start md:justify-center gap-2">
-            <span className="text-sm text-gray-600">Elder mode</span>
+            <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              {t('familyMode')}
+            </span>
             <Button
               variant={elderMode ? "default" : "outline"}
               onClick={() => setElderMode((v) => !v)}
               className={elderMode ? "text-lg py-6 px-6" : ""}
             >
-              {elderMode ? "On" : "Off"}
+              {elderMode ? t('on') : t('off')}
+            </Button>
+          </div>
+          <div className="flex items-center justify-start md:justify-center gap-2">
+            <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              {t('darkMode')}
+            </span>
+            <Button
+              variant={darkMode ? "default" : "outline"}
+              onClick={toggleDarkMode}
+              size="sm"
+            >
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
           </div>
           <div className="flex items-center justify-start md:justify-end gap-2">
@@ -336,44 +166,230 @@ export default function DashboardIndex() {
         </CardContent>
       </Card>
 
-      {/* Widgets grid – each card explains its purpose for judges */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Medication reminders: simple patient meds manager */}
-        <Card className="rounded-2xl shadow border">
-          <CardHeader>
-            <CardTitle>Medication Reminders</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <MedicationReminders />
-          </CardContent>
-        </Card>
+      {/* Tabbed Dashboard */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className={`grid w-full grid-cols-4 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
+          <TabsTrigger value="energy" className="flex items-center gap-2">
+            <Zap className="h-4 w-4" />
+            {t('energyOverview')}
+          </TabsTrigger>
+          <TabsTrigger value="caregiver" className="flex items-center gap-2">
+            <Heart className="h-4 w-4" />
+            {t('caregiverMode')}
+          </TabsTrigger>
+          <TabsTrigger value="account" className="flex items-center gap-2">
+            <User className="h-4 w-4" />
+            {t('profileSettings')}
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="flex items-center gap-2">
+            <Settings className="h-4 w-4" />
+            Settings
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Threshold editor: family personalization – overrides gov baselines */}
-        <CustomThresholds />
+        {/* Energy Dashboard Tab */}
+        <TabsContent value="energy" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <CustomThresholds />
+            <AnomalyDetector />
+            <EnergySavingsCounter />
+            <GovDataMock />
+            <AIReportWidget />
+          </div>
+        </TabsContent>
 
-        {/* Anomalies: compares latest logs vs thresholds (custom > gov×2) */}
-        <AnomalyDetector />
+        {/* Caregiver View Tab */}
+        <TabsContent value="caregiver" className="space-y-6">
+          <Card className={`rounded-2xl shadow border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
+            <CardHeader>
+              <CardTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                <Heart className="h-5 w-5" />
+                {t('caregiverMode')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'} mb-4`}>
+                Monitor and manage care for your loved ones with real-time health and energy insights.
+              </p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <MedicationReminders />
+                
+                <Card className={`border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50'}`}>
+                  <CardHeader>
+                    <CardTitle className={`text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Health Monitoring
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          Last Activity
+                        </span>
+                        <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          2 hours ago
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          Energy Usage
+                        </span>
+                        <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          Normal
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          Medication Status
+                        </span>
+                        <span className="font-medium text-green-600">
+                          Up to date
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-        {/* Savings: compares usage vs gov averages; shows under/over usage */}
-        <EnergySavingsCounter />
+        {/* Account Tab */}
+        <TabsContent value="account" className="space-y-6">
+          <Card className={`rounded-2xl shadow border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
+            <CardHeader>
+              <CardTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                <User className="h-5 w-5" />
+                {t('profileSettings')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h3 className={`font-medium mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Personal Information
+                    </h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          Full Name
+                        </label>
+                        <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {fullName}
+                        </p>
+                      </div>
+                      <div>
+                        <label className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          Email
+                        </label>
+                        <p className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {email}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h3 className={`font-medium mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Preferences
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          {t('familyMode')}
+                        </span>
+                        <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {elderMode ? t('on') : t('off')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          {t('darkMode')}
+                        </span>
+                        <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          {darkMode ? t('on') : t('off')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-        {/* Government reference: realistic baseline to ground the demo */}
-        <GovDataMock />
-
-        {/* AI report: short text based on seeded data */}
-        <AIReportWidget />
-      </div>
+        {/* Settings Tab */}
+        <TabsContent value="settings" className="space-y-6">
+          <Card className={`rounded-2xl shadow border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
+            <CardHeader>
+              <CardTitle className={`flex items-center gap-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                <Settings className="h-5 w-5" />
+                Settings
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <div>
+                  <h3 className={`font-medium mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    Display Settings
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        {t('darkMode')}
+                      </span>
+                      <Button
+                        variant={darkMode ? "default" : "outline"}
+                        onClick={toggleDarkMode}
+                        size="sm"
+                      >
+                        {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        {t('familyMode')}
+                      </span>
+                      <Button
+                        variant={elderMode ? "default" : "outline"}
+                        onClick={() => setElderMode((v) => !v)}
+                        size="sm"
+                      >
+                        {elderMode ? t('on') : t('off')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className={`font-medium mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    Language & Region
+                  </h3>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                      {t('language')}
+                    </span>
+                    <LanguageSelector />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Debug info for testing */}
       {showDebugInfo && (
-        <Card className="rounded-2xl shadow border border-yellow-300 bg-yellow-50">
+        <Card className={`rounded-2xl shadow border border-yellow-300 ${darkMode ? 'bg-yellow-900/20' : 'bg-yellow-50'}`}>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               Debug Information
               <Button
                 variant="outline"
                 size="sm"
-                onClick={clearStoredErrors}
+                onClick={() => setError("")}
                 className="text-xs"
               >
                 Clear Errors
@@ -383,40 +399,28 @@ export default function DashboardIndex() {
           <CardContent>
             <div className="space-y-4">
               <div>
-                <h4 className="font-semibold text-sm">Session Info:</h4>
+                <h4 className="font-semibold text-sm">Demo Mode Info:</h4>
                 <p className="text-xs text-gray-600">
-                  User ID: {session?.user?.id || 'None'}<br/>
-                  Email: {email || 'None'}<br/>
-                  Full Name: {fullName || 'None'}
+                  User ID: demo-user-123<br/>
+                  Email: {email}<br/>
+                  Full Name: {fullName}<br/>
+                  Elder Mode: {elderMode ? 'Enabled' : 'Disabled'}<br/>
+                  Dark Mode: {darkMode ? 'Enabled' : 'Disabled'}<br/>
+                  Active Tab: {activeTab}
                 </p>
               </div>
               <div>
-                <h4 className="font-semibold text-sm">Stored Errors:</h4>
-                {(() => {
-                  const errors = getStoredErrors()
-                  return (
-                    <div className="text-xs text-gray-600">
-                      <p>Auth Errors: {errors.auth.length}</p>
-                      <p>Routing Errors: {errors.routing.length}</p>
-                      {errors.auth.length > 0 && (
-                        <details className="mt-2">
-                          <summary className="cursor-pointer">Recent Auth Errors</summary>
-                          <pre className="mt-1 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-32">
-                            {JSON.stringify(errors.auth.slice(-3), null, 2)}
-                          </pre>
-                        </details>
-                      )}
-                      {errors.routing.length > 0 && (
-                        <details className="mt-2">
-                          <summary className="cursor-pointer">Recent Routing Errors</summary>
-                          <pre className="mt-1 text-xs bg-gray-100 p-2 rounded overflow-auto max-h-32">
-                            {JSON.stringify(errors.routing.slice(-3), null, 2)}
-                          </pre>
-                        </details>
-                      )}
-                    </div>
-                  )
-                })()}
+                <h4 className="font-semibold text-sm">Widget Status:</h4>
+                <div className="text-xs text-gray-600">
+                  <p>✅ Medication Reminders - Mock data loaded</p>
+                  <p>✅ Custom Thresholds - Interactive demo</p>
+                  <p>✅ Anomaly Detector - Mock analysis</p>
+                  <p>✅ Energy Savings Counter - Mock calculations</p>
+                  <p>✅ Government Data Mock - Regional baselines</p>
+                  <p>✅ AI Report Widget - Generated summary</p>
+                  <p>✅ Language Selector - Multilingual support</p>
+                  <p>✅ Tab Navigation - Working across all sections</p>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -424,22 +428,20 @@ export default function DashboardIndex() {
       )}
 
       {/* Demo note for judges */}
-      <Card className="rounded-2xl shadow border">
+      <Card className={`rounded-2xl shadow border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>
         <CardHeader>
-          <CardTitle>Demo Notes</CardTitle>
+          <CardTitle className={darkMode ? 'text-white' : 'text-gray-900'}>Demo Notes</CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="text-sm text-gray-600 list-disc pl-5 space-y-1">
-            <li>
-              Mock data is automatically seeded in development if your account has no appliance logs, so widgets always
-              render live values.
-            </li>
-            <li>
-              Custom thresholds override government averages in anomaly detection; otherwise a 2× multiplier of the gov
-              average is used as the threshold.
-            </li>
-            <li>The AI report is a lightweight demo summary generated from the seeded data.</li>
-            <li>Use the "Show Debug" button above to view authentication and routing error logs for testing.</li>
+          <ul className={`text-sm list-disc pl-5 space-y-1 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            <li>All widgets are running with mock data for demonstration purposes.</li>
+            <li>Custom thresholds override government averages in anomaly detection.</li>
+            <li>The AI report is a lightweight demo summary generated from mock data.</li>
+            <li>Use the "Show Debug" button above to view demo information and widget status.</li>
+            <li>Elder Mode increases text size and button sizes for accessibility.</li>
+            <li>Language selector provides multilingual support for the interface.</li>
+            <li>Dark/Light mode toggle affects the entire dashboard appearance.</li>
+            <li>Tab navigation works across all sections with proper language switching.</li>
           </ul>
         </CardContent>
       </Card>

@@ -1,105 +1,119 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { AlertTriangle } from "lucide-react";
-import { getGovernmentAveragesMap } from "@/lib/api/govData";
-
-type ApplianceLog = {
-	id: string;
-	appliance_name: string;
-	usage_minutes: number;
-	log_time: string;
-};
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { AlertTriangle, CheckCircle } from "lucide-react"
 
 export default function AnomalyDetector() {
-	const [logs, setLogs] = useState<ApplianceLog[]>([]);
-	const [anomalies, setAnomalies] = useState<string[]>([]);
-	const [govAverages, setGovAverages] = useState<Record<string, number>>({});
-	const [custom, setCustom] = useState<Record<string, number>>({});
+  const [anomalies, setAnomalies] = useState([
+    {
+      id: 1,
+      appliance: "Geyser",
+      usage: 180,
+      threshold: 120,
+      severity: "high",
+      timestamp: "2024-01-15 14:30"
+    },
+    {
+      id: 2,
+      appliance: "Heater",
+      usage: 220,
+      threshold: 180,
+      severity: "medium",
+      timestamp: "2024-01-15 12:15"
+    }
+  ])
 
-	useEffect(() => {
-		const fetchLogs = async () => {
-			try {
-				// Load government averages using the integration layer
-				const govAveragesMap = await getGovernmentAveragesMap();
-				setGovAverages(govAveragesMap);
+  const [isLoading, setIsLoading] = useState(true)
 
-				// Load user custom thresholds
-				const { data: sessionData } = await supabase.auth.getSession();
-				const uid = sessionData.session?.user.id;
-				if (uid) {
-					const { data: ct } = await supabase
-						.from("custom_thresholds")
-						.select("appliance, minutes")
-						.eq("user_id", uid);
-					const cm: Record<string, number> = {};
-					(ct || []).forEach((r: any) => (cm[(r.appliance as string).toLowerCase()] = Number(r.minutes) || 0));
-					setCustom(cm);
-				}
+  useEffect(() => {
+    // Simulate loading
+    const timer = setTimeout(() => {
+      setIsLoading(false)
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [])
 
-				// Load appliance logs
-				const { data, error } = await supabase
-					.from("appliance_logs")
-					.select("*")
-					.order("log_time", { ascending: false })
-					.limit(20);
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case "high": return "bg-red-100 text-red-800"
+      case "medium": return "bg-yellow-100 text-yellow-800"
+      case "low": return "bg-blue-100 text-blue-800"
+      default: return "bg-gray-100 text-gray-800"
+    }
+  }
 
-				if (error) {
-					console.error("Error fetching appliance logs:", error);
-					return;
-				}
+  const getSeverityIcon = (severity: string) => {
+    switch (severity) {
+      case "high": return <AlertTriangle className="h-4 w-4 text-red-600" />
+      case "medium": return <AlertTriangle className="h-4 w-4 text-yellow-600" />
+      case "low": return <CheckCircle className="h-4 w-4 text-blue-600" />
+      default: return <CheckCircle className="h-4 w-4 text-gray-600" />
+    }
+  }
 
-				if (data) {
-					setLogs(data as ApplianceLog[]);
-					detectAnomalies(data as ApplianceLog[]);
-				}
-			} catch (error) {
-				console.error("Error in fetchLogs:", error);
-			}
-		};
+  if (isLoading) {
+    return (
+      <Card className="rounded-2xl shadow border">
+        <CardHeader>
+          <CardTitle>Anomaly Detector</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse space-y-3">
+            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+            <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+            <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
-		fetchLogs();
-	}, []);
-
-	// Threshold-based anomaly detection with priority: custom > gov*2
-	const detectAnomalies = (logs: ApplianceLog[]) => {
-		const alerts: string[] = [];
-		logs.forEach((log) => {
-			const key = (log.appliance_name || "").toLowerCase();
-			const customMin = custom[key];
-			const govMin = govAverages[key];
-			const threshold = customMin || (govMin ? govMin * 2 : undefined);
-			if (threshold && log.usage_minutes > threshold) {
-				const base = customMin ? `${customMin} min (custom)` : `${govMin} min (gov avg)`;
-				alerts.push(`⚠️ ${log.appliance_name} used ${log.usage_minutes} min vs threshold ${base}`);
-			}
-		});
-		setAnomalies(alerts);
-	};
-
-	return (
-		<Card className="mt-6">
-			<CardHeader>
-				<CardTitle className="flex items-center gap-2">
-					<AlertTriangle className="text-red-500" />
-					Anomaly Detector
-				</CardTitle>
-			</CardHeader>
-			<CardContent>
-				{anomalies.length > 0 ? (
-					<ul className="list-disc pl-6 space-y-2 text-red-600 font-medium">
-						{anomalies.map((a, idx) => (
-							<li key={idx}>{a}</li>
-						))}
-					</ul>
-				) : (
-					<p className="text-gray-500">✅ No unusual activity detected.</p>
-				)}
-			</CardContent>
-		</Card>
-	);
+  return (
+    <Card className="rounded-2xl shadow border">
+      <CardHeader>
+        <CardTitle>Anomaly Detector (Demo)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-gray-600 mb-4">
+          Detects unusual energy usage patterns compared to your custom thresholds and government baselines.
+        </p>
+        
+        {anomalies.length === 0 ? (
+          <div className="text-center py-8">
+            <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
+            <p className="text-gray-600">No anomalies detected</p>
+            <p className="text-xs text-gray-500 mt-1">All appliances are within normal usage patterns</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {anomalies.map((anomaly) => (
+              <div key={anomaly.id} className="border rounded-lg p-3 bg-gray-50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    {getSeverityIcon(anomaly.severity)}
+                    <span className="font-medium">{anomaly.appliance}</span>
+                  </div>
+                  <Badge className={getSeverityColor(anomaly.severity)}>
+                    {anomaly.severity.toUpperCase()}
+                  </Badge>
+                </div>
+                <div className="text-sm text-gray-600">
+                  <p>Usage: {anomaly.usage} minutes (Threshold: {anomaly.threshold} minutes)</p>
+                  <p className="text-xs text-gray-500 mt-1">Detected: {anomaly.timestamp}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        <div className="text-xs text-gray-500 mt-4">
+          Demo mode: Showing mock anomalies based on custom thresholds and government data.
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 
